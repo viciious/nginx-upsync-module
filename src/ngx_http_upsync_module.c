@@ -2141,7 +2141,7 @@ ngx_http_upsync_init_module(ngx_cycle_t *cycle)
             upscf->conf_file->fd = NGX_INVALID_FILE;
         }
         ngx_change_file_access(upscf->upsync_dump_path.data, 
-                               S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH|S_IWOTH);
+                               S_IRUSR|S_IWUSR|S_IRGRP);
     }
 
     return NGX_OK;
@@ -3091,7 +3091,7 @@ ngx_http_upsync_dump_server(ngx_http_upsync_server_t *upsync_server)
     upscf->conf_file->fd = ngx_open_file(upscf->upsync_dump_path.data,
                                          NGX_FILE_TRUNCATE,
                                          NGX_FILE_WRONLY,
-                                         NGX_FILE_DEFAULT_ACCESS);
+                                         S_IRUSR|S_IWUSR|S_IRGRP);
     if (upscf->conf_file->fd == NGX_INVALID_FILE) {
         ngx_log_error(NGX_LOG_ERR, upsync_server->ctx.pool->log, 0,
                       "upsync_dump_server: open dump file \"%V\" failed", 
