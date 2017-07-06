@@ -91,8 +91,6 @@ typedef struct {
 
     ngx_str_t                        upsync_basic_auth;
 
-    ngx_open_file_t                 *conf_file;
-
     ngx_upsync_conf_t               *upsync_type_conf;
 
     ngx_http_upstream_server_t       conf_server;         /* conf server */
@@ -2016,8 +2014,6 @@ ngx_http_upsync_create_srv_conf(ngx_conf_t *cf)
 
     upscf->strong_dependency = NGX_CONF_UNSET_UINT;
 
-    upscf->conf_file = NGX_CONF_UNSET_PTR;
-
     upscf->upsync_type_conf = NGX_CONF_UNSET_PTR;
 
     ngx_memzero(&upscf->conf_server, sizeof(upscf->conf_server));
@@ -2077,15 +2073,6 @@ ngx_http_upsync_init_srv_conf(ngx_conf_t *cf, void *conf, ngx_uint_t num)
                                       + uscf->host.len;
     }
 
-    upscf->conf_file = ngx_pcalloc(cf->pool, sizeof(ngx_open_file_t));
-    if (upscf->conf_file == NULL) {
-        return NGX_CONF_ERROR; 
-    }
-    upscf->conf_file->fd = NGX_INVALID_FILE;
-    upscf->conf_file->name = upscf->upsync_dump_path;
-    upscf->conf_file->flush = NULL;
-    upscf->conf_file->data = NULL;
-
     upsync_server->index = 0;
 
     upsync_server->upscf = upscf;
@@ -2101,31 +2088,15 @@ ngx_http_upsync_init_srv_conf(ngx_conf_t *cf, void *conf, ngx_uint_t num)
 static ngx_int_t 
 ngx_http_upsync_init_module(ngx_cycle_t *cycle)
 {
-    ngx_uint_t                       i;
-    ngx_http_upsync_server_t        *upsync_server;
-    ngx_http_upsync_srv_conf_t      *upscf;
-
     // no http {} block found
     if (upsync_ctx == NULL) {
         return NGX_OK;
     }
-    upsync_server = upsync_ctx->upsync_server;
 
     if (ngx_http_upsync_init_shm_mutex(cycle) != NGX_OK) {
         ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "upsync_init_module:"
                       " init shm mutex failed");
         return NGX_ERROR;
-    }
-
-    for (i = 0; i < upsync_ctx->upstream_num; i++) {
-
-        upscf = upsync_server[i].upscf;
-        if (upscf->conf_file->fd != NGX_INVALID_FILE) {
-            ngx_close_file(upscf->conf_file->fd);
-            upscf->conf_file->fd = NGX_INVALID_FILE;
-        }
-        ngx_change_file_access(upscf->upsync_dump_path.data, 
-                               S_IRUSR|S_IWUSR|S_IRGRP);
     }
 
     return NGX_OK;
@@ -3029,6 +3000,7 @@ ngx_http_upsync_dump_server(ngx_http_upsync_server_t *upsync_server)
     ngx_http_upstream_rr_peer_t             *peer = NULL;
     ngx_http_upstream_rr_peers_t            *peers = NULL;
     ngx_http_upstream_srv_conf_t            *uscf = NULL;
+    ngx_open_file_t                         conf_file;
 
     uscf = upsync_server->uscf;
     if (uscf->peer.data != NULL) {
@@ -3072,36 +3044,37 @@ ngx_http_upsync_dump_server(ngx_http_upsync_server_t *upsync_server)
     }
 
     upscf = upsync_server->upscf;
-    upscf->conf_file->fd = ngx_open_file(upscf->upsync_dump_path.data,
+    ngx_memzero(&conf_file, sizeof(ngx_open_file_t));
+
+    conf_file.fd = ngx_open_file(upscf->upsync_dump_path.data,
                                          NGX_FILE_TRUNCATE,
                                          NGX_FILE_WRONLY,
                                          S_IRUSR|S_IWUSR|S_IRGRP);
-    if (upscf->conf_file->fd == NGX_INVALID_FILE) {
+    if (conf_file.fd == NGX_INVALID_FILE) {
         ngx_log_error(NGX_LOG_ERR, upsync_server->ctx.pool->log, 0,
                       "upsync_dump_server: open dump file \"%V\" failed", 
                       &upscf->upsync_dump_path);
         return NGX_ERROR;
     }
 
-    ngx_lseek(upscf->conf_file->fd, 0, SEEK_SET);
-    if (ngx_write_fd(upscf->conf_file->fd, b->start, b->last - b->start) == NGX_ERROR) {
+    ngx_lseek(conf_file.fd, 0, SEEK_SET);
+    if (ngx_write_fd(conf_file.fd, b->start, b->last - b->start) == NGX_ERROR) {
         ngx_log_error(NGX_LOG_ERR, upsync_server->ctx.pool->log, 0,
                       "upsync_dump_server: write file failed %V", 
                       &upscf->upsync_dump_path);
-        ngx_close_file(upscf->conf_file->fd);
+        ngx_close_file(conf_file.fd);
         return NGX_ERROR;
     }
 
-    if (ngx_ftruncate(upscf->conf_file->fd, b->last - b->start) != NGX_OK) {
+    if (ngx_ftruncate(conf_file.fd, b->last - b->start) != NGX_OK) {
         ngx_log_error(NGX_LOG_ERR, upsync_server->ctx.pool->log, 0,
                       "upsync_dump_server: truncate file failed %V", 
                       &upscf->upsync_dump_path);
-        ngx_close_file(upscf->conf_file->fd);
+        ngx_close_file(conf_file.fd);
         return NGX_ERROR;
     }
 
-    ngx_close_file(upscf->conf_file->fd);
-    upscf->conf_file->fd = NGX_INVALID_FILE;
+    ngx_close_file(conf_file.fd);
 
     ngx_log_error(NGX_LOG_NOTICE, upsync_server->ctx.pool->log, 0,
                   "upsync_dump_server: dump conf file %V succeeded, number of servers is %d", 
