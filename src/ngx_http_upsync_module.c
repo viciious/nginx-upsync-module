@@ -667,11 +667,6 @@ ngx_http_upsync_set_conf_dump(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR; 
     }
 
-    upscf->conf_file = ngx_conf_open_file(cf->cycle, &value[1]); 
-    if (upscf->conf_file == NULL) {
-        return NGX_CONF_ERROR; 
-    }
-
     return NGX_CONF_OK;
 }
 
