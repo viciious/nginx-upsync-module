@@ -1,13 +1,13 @@
-Name
-====
+nginx-upsync-module
+===================
 
-nginx-upsync-module - Nginx C module, sync upstreams from consul or others, dynamically modify backend-servers attribute(weight, max_fails,...), needn't reload nginx.
+Nginx C module, which can sync upstreams from Consul or others. It dynamically modifies backend-servers attributes (weight, max_fails,...), without need to reload NGINX.
 
 It may not always be convenient to modify configuration files and restart NGINX. For example, if you are experiencing large amounts of traffic and high load, restarting NGINX and reloading the configuration at that point further increases load on the system and can temporarily degrade performance.
 
-The module can be more smoothly expansion and constriction, and will not influence the performance.
+The module allows to expand and scale down without affecting performance.
 
-Another module, [nginx-stream-upsync-module](https://github.com/xiaokai-wang/nginx-stream-upsync-module) supports nginx stream module(TCP protocol), please be noticed.
+Another module, [nginx-stream-upsync-module](https://github.com/xiaokai-wang/nginx-stream-upsync-module) supports NGINX stream module (TCP protocol), please be noticed.
 
 Table of Contents
 =================
@@ -49,12 +49,10 @@ nginx-consul:
 ```nginx-consul
 http {
     upstream test {
-        # fake server otherwise ngx_http_upstream will report error when startup
-        server 127.0.0.1:11111;
-
-        # all backend server will pull from consul when startup and will delete fake server
         upsync 127.0.0.1:8500/v1/kv/upstreams/test/ upsync_timeout=6m upsync_interval=500ms upsync_type=consul strong_dependency=off;
         upsync_dump_path /usr/local/nginx/conf/servers/servers_test.conf;
+
+        include /usr/local/nginx/conf/servers/servers_test.conf;
     }
 
     upstream bar {
@@ -83,12 +81,10 @@ nginx-etcd:
 ```nginx-etcd
 http {
     upstream test {
-        # fake server otherwise ngx_http_upstream will report error when startup
-        server 127.0.0.1:11111;
-
-        # all backend server will pull from etcd when startup and will delete fake server
         upsync 127.0.0.1:2379/v2/keys/upstreams/test upsync_timeout=6m upsync_interval=500ms upsync_type=etcd strong_dependency=off;
         upsync_dump_path /usr/local/nginx/conf/servers/servers_test.conf;
+
+        include /usr/local/nginx/conf/servers/servers_test.conf;
     }
 
     upstream bar {
@@ -118,13 +114,12 @@ upsync_lb:
 http {
     upstream test {
         least_conn; //hash $uri consistent;
-        # fake server otherwise ngx_http_upstream will report error when startup
-        server 127.0.0.1:11111;
 
-        # all backend server will pull from consul when startup and will delete fake server
         upsync 127.0.0.1:8500/v1/kv/upstreams/test/ upsync_timeout=6m upsync_interval=500ms upsync_type=consul strong_dependency=off;
         upsync_dump_path /usr/local/nginx/conf/servers/servers_test.conf;
         upsync_lb least_conn; //hash_ketama;
+
+        include /usr/local/nginx/conf/servers/servers_test.conf;
     }
 
     upstream bar {
@@ -149,6 +144,8 @@ http {
     }
 }
 ```
+
+NOTE: recomending strong_dependency is configed off and the first time included file include all the servers.
 
 Description
 ======
@@ -201,7 +198,7 @@ The parameters' meanings are:
 
 * strong_dependency
 
-    when nginx start up if depending on consul/etcd, and consul/etcd is not working, nginx will boot failed, otherwise booting normally.
+    when strong_dependency is on, nginx will pull servers from consul/etcd every time when nginx start up or reload.
 
 [Back to TOC](#table-of-contents)       
 
@@ -271,6 +268,14 @@ In the second case it must be *consul_services*.
 ```nginx-consul
         upsync 127.0.0.1:8500/v1/catalog/service/test upsync_timeout=6m upsync_interval=500ms upsync_type=consul_services strong_dependency=off;
 ```
+
+In the third case, it must be *consul_health*:
+
+```nginx-consul
+        upsync 127.0.0.1:8500/v1/health/service/test upsync_timeout=6m upsync_interval=500ms upsync_type=consul_health strong_dependency=off;
+```
+
+Services with failing health checks are marked as down with the health api.
 
 You can add or delete backend server through consul_ui or http_interface. Below are examples for key/value store.
 
@@ -364,10 +369,6 @@ check-conf:
 ```check-conf
 http {
     upstream test {
-        # fake server otherwise ngx_http_upstream will report error when startup
-        server 127.0.0.1:11111;
-
-        # all backend server will pull from consul when startup and will delete fake server
         upsync 127.0.0.1:8500/v1/kv/upstreams/test/ upsync_timeout=6m upsync_interval=500ms upsync_type=consul strong_dependency=off;
         upsync_dump_path /usr/local/nginx/conf/servers/servers_test.conf;
 
@@ -417,7 +418,7 @@ TODO
 Compatibility
 =============
 
-Master branch is compatible with nginx-1.9+.
+Master branch is compatible with nginx-1.9.8+.
 
 The branch of nginx-upsync-1.8.x is compatible with Nginx-1.8.x and with tengine-2.2.0.
 
