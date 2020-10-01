@@ -188,6 +188,8 @@ static ngx_int_t ngx_http_upsync_etcd_parse_init(void *upsync_server);
 static ngx_int_t ngx_http_upsync_consul_parse_init(void *upsync_server);
 static ngx_int_t ngx_http_upsync_dump_server(
     ngx_http_upsync_server_t *upsync_server);
+static ngx_int_t ngx_http_upsync_touch_server(
+    ngx_http_upsync_server_t *upsync_server);
 static ngx_int_t ngx_http_upsync_init_server(ngx_event_t *event);
 
 static ngx_int_t ngx_http_upsync_add_peers(ngx_cycle_t *cycle, 
@@ -756,7 +758,8 @@ ngx_http_upsync_process(ngx_http_upsync_server_t *upsync_server)
             ngx_http_upsync_dump_server(upsync_server);
             ngx_shmtx_unlock(&upsync_server->upsync_accept_mutex);
         }
-    }
+    } else
+        ngx_http_upsync_touch_server(upsync_server);
 
     return;
 }
@@ -3115,6 +3118,42 @@ ngx_http_upsync_dump_server(ngx_http_upsync_server_t *upsync_server)
     return NGX_OK;
 }
 
+static ngx_int_t
+ngx_http_upsync_touch_server(ngx_http_upsync_server_t *upsync_server)
+{
+    ngx_http_upsync_srv_conf_t              *upscf = upsync_server->upscf;
+
+#if (NGX_WIN32)
+    {
+    ngx_fd_t  fd;
+
+    fd = ngx_open_file(upscf->upsync_dump_path.data, NGX_FILE_RDWR, NGX_FILE_OPEN, 0);
+
+    if (fd == NGX_INVALID_FILE) {
+        ngx_log_error(NGX_LOG_ERR, upsync_server->ctx.pool->log, 0,
+                      "upsync_dump_server: open dump file \"%V\" failed",
+                      &upscf->upsync_dump_path);
+        return NGX_ERROR;
+    }
+
+    if (ngx_set_file_time(NULL, fd, ctx->mtime) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ALERT, upsync_server->ctx.pool->log, ngx_errno,
+                      ngx_set_file_time_n " \"%V\" failed", &upscf->upsync_dump_path);
+    }
+
+    if (ngx_close_file(fd) == NGX_FILE_ERROR) {
+        ngx_log_error(NGX_LOG_ALERT, upsync_server->ctx.pool->log, ngx_errno,
+                      ngx_close_file_n " \"%V\" failed", &upscf->upsync_dump_path);
+    }
+    }
+#else
+    if (ngx_set_file_time(upscf->upsync_dump_path.data, -1, ngx_time()) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ALERT, upsync_server->ctx.pool->log, ngx_errno,
+                      ngx_set_file_time_n " \"%V\" failed", &upscf->upsync_dump_path);
+    }
+#endif
+    return NGX_OK;
+}
 
 static ngx_int_t
 ngx_http_upsync_init_server(ngx_event_t *event)
