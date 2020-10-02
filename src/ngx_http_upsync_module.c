@@ -3136,7 +3136,7 @@ ngx_http_upsync_touch_server(ngx_http_upsync_server_t *upsync_server)
         return NGX_ERROR;
     }
 
-    if (ngx_set_file_time(NULL, fd, ctx->mtime) != NGX_OK) {
+    if (ngx_set_file_time(NULL, fd, ngx_time()) != NGX_OK) {
         ngx_log_error(NGX_LOG_ALERT, upsync_server->ctx.pool->log, ngx_errno,
                       ngx_set_file_time_n " \"%V\" failed", &upscf->upsync_dump_path);
     }
